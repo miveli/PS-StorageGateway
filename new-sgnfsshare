@@ -1,0 +1,7 @@
+
+$fgwname = "yourFGWname"
+$fgw = Get-SGGateway $fgwname
+$role = New-IAMRole -AssumeRolePolicyDocument (Get-Content -raw D:\terraform\SGW\fgw-stsassumerole.json) -RoleName home-fgw-iam-role -Verbose
+$role.Arn
+
+New-SGNFSFileShare -ClientList 192.168.0.0/24 -GatewayARN $fgw.GatewayARN -LocationARN arn:aws:s3:::miveli-home-fgw -Squash RootSquash -ClientToken homefgw -Role $role.Arn -Verbose
