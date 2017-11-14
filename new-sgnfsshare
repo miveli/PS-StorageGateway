@@ -1,7 +1,12 @@
-
-$fgwname = "yourFGWname"
-$fgw = Get-SGGateway $fgwname
+## this is a quick script to set up a new NFS file share on an AWS File Storage Gateway appliance
+## Set the file gateway name you want to work on
+$fgwname = "home-fgw"
+## This will get the FGW by name
+$fgw = Get-SGGateway | ? {$_.gatewayname -eq "$fgwname"}
+## This will create a new role with AssumeRole policy, and add the S3 access policy in the write-iamrolepolicy command
 $role = New-IAMRole -AssumeRolePolicyDocument (Get-Content -raw D:\terraform\SGW\fgw-stsassumerole.json) -RoleName home-fgw-iam-role -Verbose
+Write-IAMRolePolicy -RoleName $role.RoleName -PolicyName home-fgw-access -PolicyDocument (Get-Content -Raw D:\terraform\SGW\fgwpolicy.json)
+## here i am just checking that we have the arn right for the gateway
 $role.Arn
-
-New-SGNFSFileShare -ClientList 192.168.0.0/24 -GatewayARN $fgw.GatewayARN -LocationARN arn:aws:s3:::miveli-home-fgw -Squash RootSquash -ClientToken homefgw -Role $role.Arn -Verbose
+## this command is creating the NFS share, edit to match local requirements
+New-SGNFSFileShare -ClientList "192.168.0.16/32","192.168.0.17/32" -GatewayARN $fgw.GatewayARN -LocationARN "arn:aws:s3:::miveli-home-fgw" -Squash RootSquash -ClientToken home-fgw -Role $role.Arn -NFSFileShareDefaults_DirectoryMode 0777 -NFSFileShareDefaults_FileMode 0666 -NFSFileShareDefaults_OwnerId 65534 -NFSFileShareDefaults_GroupId 65534 -DefaultStorageClass S3_STANDARD
