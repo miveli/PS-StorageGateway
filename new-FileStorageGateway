@@ -1,0 +1,61 @@
+$fgw = Get-SGGateway | ? {$_.gatewayname -eq "GatewayName"}
+Get-SGGatewayInformation -GatewayARN $fgw.GatewayARN
+$fgwname = "home-fgw"
+$fgw = Get-SGGateway | ? {$_.gatewayname -eq "$fgwname"}
+$role = New-IAMRole -AssumeRolePolicyDocument (Get-Content -raw D:\terraform\SGW\fgw-stsassumerole.json) -RoleName home-fgw-iam-role -Verbose
+Write-IAMRolePolicy -RoleName $role.RoleName -PolicyName home-fgw-access -PolicyDocument (Get-Content -Raw D:\terraform\SGW\fgwpolicy.json)
+$role.Arn
+
+New-SGNFSFileShare -ClientList "192.168.0.16/32","192.168.0.17/32" -GatewayARN $fgw.GatewayARN -LocationARN "arn:aws:s3:::miveli-home-fgw" -Squash RootSquash -ClientToken home-fgw -Role $role.Arn -NFSFileShareDefaults_DirectoryMode 0777 -NFSFileShareDefaults_FileMode 0666 -NFSFileShareDefaults_OwnerId 65534 -NFSFileShareDefaults_GroupId 65534 -DefaultStorageClass S3_STANDARD
+
+<# STS Assume Role code
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "storagegateway.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+
+#>
+
+<# fgwpolicy snippet
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "s3:GetAccelerateConfiguration",
+                "s3:GetBucketLocation",
+                "s3:GetBucketVersioning",
+                "s3:ListBucket",
+                "s3:ListBucketVersions",
+                "s3:ListBucketMultipartUploads"
+            ],
+            "Resource": "arn:aws:s3:::miveli-home-fgw",
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "s3:AbortMultipartUpload",
+                "s3:DeleteObject",
+                "s3:DeleteObjectVersion",
+                "s3:GetObject",
+                "s3:GetObjectVersion",
+                "s3:ListMultipartUploadParts",
+                "s3:PutObject"
+            ],
+            "Resource": "arn:aws:s3:::miveli-home-fgw/*",
+            "Effect": "Allow"
+        }
+    ]
+}
+
+
+
+#>
