@@ -1,0 +1,93 @@
+
+$RoleName = read-host "Enter the name for the new IAM role for the Gateway service. (ps-fgw-iam-role-XX)"
+$KeyName =  "enter your key name here"
+$InstanceType = read-host "The minimum instance type is m5.xlarge. Enter the instance type you want?"
+$Region = read-host "Add the region for the gateway"
+$BucketName = read-host "Enter the name of the bucket to create for the NFS share."
+$az = read-host "Enter the availibility zone for the instance.Eg ap-southeast-2c"
+$sg = read-host "Enter the Security group ID for the Gateway. "
+$ami = "ami-47d41925"
+$Cachedisksize = read-host "Enter the Cache disk size. Minimum size 150"
+$CacheDiskType = read-host "Enter the volume type. Default is gp2"
+$Subnet = read-host "Enter your subnet ID here"
+$GatewayName = read-host "enter the gateway name here."
+$GatewayRegion = read-host "Enter the Gateway region. Make sure it matches the Subnet region" 
+$GatewayType = read-host 'Select the type of Gateway to use. Valid Values: "STORED", "CACHED", "VTL", "FILE_S3"'
+$GatewayTimezone = read-host "Enter the Timezone for the gateway in the format GMT-/+ [HH:MM]. Example GMT+10:00"
+$Squash = read-host "Enter the Squash level for the NFS Share. Valid entries are RootSquash, NoSquash, AllSquash"
+
+
+### IAM role 
+$role = New-IAMRole -AssumeRolePolicyDocument (Get-Content -raw C:\pathtolocationoffile\assumests.json) -RoleName $RoleName -Verbose
+Write-IAMRolePolicy -RoleName $role.RoleName -PolicyName ps-fgw02-access -PolicyDocument (Get-Content -Raw C:\pathtolocationoffile\FGWPolicy.json)  -Verbose
+$role.Arn
+### end IAM role
+
+
+<###
+Create the EC2 instance
+###>
+$tag1 = @{ Key="Name"; Value="$GatewayName" }
+$tagspec1 = new-object Amazon.EC2.Model.TagSpecification
+$tagspec1.ResourceType = "instance"
+$tagspec1.Tags.Add($tag1)
+
+
+
+## end variable definitions
+
+$instance = New-EC2Instance -ImageId $ami -MinCount 1 -MaxCount 1 -keyname $KeyName -SecurityGroupId $sg -InstanceType $InstanceType -SubnetId $Subnet -TagSpecification $tagspec1 -AvailabilityZone $az 
+## add cache volume to instance
+$vol = New-EC2Volume -Size $Cachedisksize -AvailabilityZone $az -VolumeType $CacheDiskType -Verbose
+
+$ip = $instance.Instances.PrivateIpAddress
+$ip
+$instId = $instance.Instances.InstanceId
+$instId
+$volid = $vol.VolumeId
+
+sleep 180
+
+Add-EC2Volume -InstanceId $instid -VolumeId $volid -Device "/dev/sdf" -Verbose
+
+$publicIP = Get-EC2Instance -InstanceID $instid -Region $Region | Select -ExpandProperty Instances | Select PublicIPAddress -Verbose
+
+<###
+FGW Activation
+###>
+function Get-ActivationKey {
+  [CmdletBinding()]
+  Param(
+    [parameter(Mandatory=$true)][string]$IpAddress, 
+    [parameter(Mandatory=$true)][string]$ActivationRegion
+  )
+  PROCESS {
+    $request = Invoke-WebRequest -UseBasicParsing -Uri "http://$IpAddress/?activationRegion=$ActivationRegion" -MaximumRedirection 0 -ErrorAction SilentlyContinue
+    if ($request) {
+      $activationKeyParam = $request.Headers.Location | Select-String -Pattern "activationKey=([A-Z0-9-]+)"
+      $activationKeyParam.Matches.Value.Split("=")[1]
+    }
+  }
+}
+
+$key = Get-ActivationKey -IpAddress $publicip.PublicIpAddress -ActivationRegion ap-southeast-2 -Verbose
+
+$gateway = enable-sggateway -ActivationKey $key -GatewayName $GatewayName -GatewayRegion $GatewayRegion -GatewayType $GatewayType -GatewayTimezone $GatewayTimezone -Verbose
+
+<#############
+Create the bucket
+########>
+
+New-S3Bucket -BucketName $BucketName -Region $Region -Verbose
+
+<####
+Create the NFS share
+###>
+## How do you create the IAM role to use a default template??
+#set cache disk
+
+$CachediskID = (Get-SGLocalDisk -GatewayARN $gateway).Disks.diskID
+add-sgcache -DiskId $CachediskID -GatewayARN $gateway -Verbose
+New-SGNFSFileShare -GatewayARN $gateway -ClientList 0.0.0.0 -LocationARN "arn:aws:s3:::$bucketname" -Squash $squash -ClientToken $BucketName -Role $role.Arn -Verbose
+#New-SGNFSFileShare -ClientList "192.168.0.16/32","192.168.0.17/32" -GatewayARN $fgw.GatewayARN -LocationARN "arn:aws:s3:::miveli-home-fgw" -Squash RootSquash -ClientToken home-fgw -Role $role.Arn -NFSFileShareDefaults_DirectoryMode 0777 -NFSFileShareDefaults_FileMode 0666 -NFSFileShareDefaults_OwnerId 65534 -NFSFileShareDefaults_GroupId 65534 -DefaultStorageClass S3_STANDARD
+
