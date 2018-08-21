@@ -37,7 +37,7 @@ New-SGNFSFileShare -ClientList "192.168.0.16/32","192.168.0.17/32" -GatewayARN $
                 "s3:ListBucketVersions",
                 "s3:ListBucketMultipartUploads"
             ],
-            "Resource": "arn:aws:s3:::miveli-home-fgw",
+            "Resource": "arn:aws:s3:::bucketname",
             "Effect": "Allow"
         },
         {
@@ -50,7 +50,7 @@ New-SGNFSFileShare -ClientList "192.168.0.16/32","192.168.0.17/32" -GatewayARN $
                 "s3:ListMultipartUploadParts",
                 "s3:PutObject"
             ],
-            "Resource": "arn:aws:s3:::miveli-home-fgw/*",
+            "Resource": "arn:aws:s3:::bucketname/*",
             "Effect": "Allow"
         }
     ]
